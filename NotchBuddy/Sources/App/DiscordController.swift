@@ -310,6 +310,7 @@ final class DiscordController: @unchecked Sendable {
             if evt != "ERROR", let user = data["user"] as? [String: Any] {
                 authenticated = true
                 selfId = (user["id"] as? String) ?? selfId
+                appendAppLog("discord", "authenticated as \((user["username"] as? String) ?? "?")")
                 setStatus(.connected)
                 subscribeGlobals()
                 command("GET_VOICE_SETTINGS")
@@ -483,6 +484,7 @@ final class DiscordController: @unchecked Sendable {
         io.async { [weak self] in
             guard let self else { return }
             guard !self.clientSecret.isEmpty else {
+                appendAppLog("discord", "authorize refused: client secret empty")
                 self.setStatus(.error("Add your Discord client id and secret first")); return
             }
             if self.sockFD == -1 { self.connect() }
@@ -495,6 +497,7 @@ final class DiscordController: @unchecked Sendable {
     /// the OAuth code we exchange for tokens.
     private func sendAuthorize() {
         wantsAuthorize = false
+        appendAppLog("discord", "AUTHORIZE sent (client \(clientId.prefix(8))…, scopes \(Self.scopes.joined(separator: ",")))")
         command("AUTHORIZE", args: ["client_id": clientId, "scopes": Self.scopes]) { [weak self] payload in
             guard let self else { return }
             if let code = (payload["data"] as? [String: Any])?["code"] as? String {
@@ -521,9 +524,11 @@ final class DiscordController: @unchecked Sendable {
             guard let self, let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let access = json["access_token"] as? String else {
+                appendAppLog("discord", "token exchange FAILED (body: \(data.flatMap { String(data: $0, encoding: .utf8) } ?? "no data"))")
                 self?.setStatus(.error("Token exchange failed — check id/secret/redirect URI"))
                 return
             }
+            appendAppLog("discord", "token exchange OK")
             let refresh = (json["refresh_token"] as? String) ?? ""
             KeychainStore.shared.set("discord-access-token", value: access)
             if !refresh.isEmpty { KeychainStore.shared.set("discord-refresh-token", value: refresh) }

@@ -75,6 +75,9 @@ final class KeychainStore: @unchecked Sendable {
         "calcom-api-key",
         "notion-api-key",
         "elevenlabs-api-key",
+        // Discord OAuth (DiscordController)
+        "discord-client-id", "discord-client-secret", "discord-redirect-uri",
+        "discord-access-token", "discord-refresh-token",
         // Portfolio exchange credentials
         "portfolio-binance-key",  "portfolio-binance-secret",
         "portfolio-okx-key",      "portfolio-okx-secret",      "portfolio-okx-passphrase",
