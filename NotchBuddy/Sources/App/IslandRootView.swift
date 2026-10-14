@@ -701,22 +701,23 @@ struct ClaudePlanHeaderPill: View {
 }
 #endif
 
-// MARK: - Compact mini mochi grid (2×2 to the right of the notch)
+// MARK: - Compact mini mochi grid (3×2 to the right of the notch)
 
 struct CompactMiniGrid: View {
     @ObservedObject var state: AppState
 
     private var others: [AgentTask] {
-        Array(state.tasks.filter { $0.id != state.focusId }.prefix(4))
+        Array(state.tasks.filter { $0.id != state.focusId }.prefix(6))
     }
 
     var body: some View {
-        let cols = [GridItem(.fixed(12), spacing: 4), GridItem(.fixed(12), spacing: 4)]
-        LazyVGrid(columns: cols, spacing: 4) {
+        let cols = [GridItem(.fixed(8), spacing: 2), GridItem(.fixed(8), spacing: 2),
+                    GridItem(.fixed(8), spacing: 2)]
+        LazyVGrid(columns: cols, spacing: 2) {
             ForEach(others) { task in
                 MiniBotCanvasView(task: task)
-                    .frame(width: 12 / 0.6, height: 12 / 0.6)
-                    .frame(width: 12, height: 12, alignment: .center)
+                    .frame(width: 8 / 0.6, height: 8 / 0.6)
+                    .frame(width: 8, height: 8, alignment: .center)
             }
         }
         .frame(width: 28, height: 28)
