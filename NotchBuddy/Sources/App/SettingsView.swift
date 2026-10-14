@@ -106,6 +106,9 @@ struct SettingsView: View {
     @State private var stripeKey: String    = KeychainStore.shared.get("stripe-api-key")  ?? ""
     @State private var calcomKey: String    = KeychainStore.shared.get("calcom-api-key")  ?? ""
     @State private var notionKey: String    = KeychainStore.shared.get("notion-api-key")  ?? ""
+    @State private var discordClientId: String     = KeychainStore.shared.get("discord-client-id")     ?? ""
+    @State private var discordClientSecret: String = KeychainStore.shared.get("discord-client-secret") ?? ""
+    @State private var discordRedirect: String     = KeychainStore.shared.get("discord-redirect-uri")  ?? "http://localhost"
     @AppStorage(CryptoSettings.exchangeKey)     private var cryptoExchange = CryptoExchange.coinbase.rawValue
     @AppStorage(CryptoSettings.currencyKey)     private var cryptoCurrency = "EUR"
     @AppStorage(CryptoSettings.coinsKey)        private var cryptoCoins = CryptoSettings.defaultCoins
@@ -1286,6 +1289,43 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                 }
 
+                // Discord — bring your own OAuth app (voice states + notifications)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Circle().fill(Color(hex: "#5865F2")).frame(width: 8, height: 8)
+                        Text("Discord").font(.system(size: 12, weight: .semibold))
+                    }
+                    TextField("Application Client ID", text: $discordClientId)
+                        .textFieldStyle(.roundedBorder)
+                    SecureField("Client Secret", text: $discordClientSecret)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Redirect URI", text: $discordRedirect)
+                        .textFieldStyle(.roundedBorder)
+                    HStack(spacing: 8) {
+                        Button {
+                            saveKey("discord-client-id",     value: discordClientId)
+                            saveKey("discord-client-secret", value: discordClientSecret)
+                            saveKey("discord-redirect-uri",  value: discordRedirect)
+                            DiscordController.shared.settingsChanged()
+                            DiscordController.shared.authorize()
+                        } label: {
+                            Text("Connect Discord")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(discordClientSecret.isEmpty)
+                        switch state.discordStatus {
+                        case .idle:                Text("Not connected").font(.system(size: 10)).foregroundColor(Color(hex: "#8E939C"))
+                        case .connecting:          Text("Connecting…").font(.system(size: 10)).foregroundColor(Color(hex: "#8E939C"))
+                        case .awaitingConsent:     Text("Approve in the Discord window…").font(.system(size: 10)).foregroundColor(Color(hex: "#F5A524"))
+                        case .connected:           Text("Connected").font(.system(size: 10, weight: .semibold)).foregroundColor(Color(hex: "#22C55E"))
+                        case .error(let message):  Text(message).font(.system(size: 10)).foregroundColor(Color(hex: "#F4505E"))
+                        }
+                    }
+                    Text("discord.com/developers → New Application → OAuth2: copy the Client ID and Secret, and add your redirect URI (default http://localhost). Connect opens a consent dialog in Discord.")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color(hex: "#8E939C"))
+                }
+
                 // Notion
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
@@ -2060,6 +2100,9 @@ struct SettingsView: View {
         saveKey("stripe-api-key",  value: stripeKey)
         saveKey("calcom-api-key",  value: calcomKey)
         saveKey("notion-api-key",  value: notionKey)
+        saveKey("discord-client-id",     value: discordClientId)
+        saveKey("discord-client-secret", value: discordClientSecret)
+        saveKey("discord-redirect-uri",  value: discordRedirect)
         statusMessage = String(localized: "status.integrations-saved")
     }
 
@@ -2144,7 +2187,7 @@ struct SettingsView: View {
     private func pillRow(_ def: PillDefinition) -> some View {
         let isMain = def.id == state.mainPillId
         let isOn   = state.activeIntegrations.contains(def.id)
-        let atMax  = state.activeIntegrations.count >= 4 && !isOn && !isMain
+        let atMax  = state.activeIntegrations.count >= 6 && !isOn && !isMain
         let hint: String? = {
             if isMain { return nil }
             if def.comingSoon { return String(localized: "Coming soon") }
@@ -2157,6 +2200,7 @@ struct SettingsView: View {
             if def.id == "agent_opencode"      && !HookServer.openCodePluginInstalled()  { return String(localized: "Plugin not installed") }
             if def.id == "agent_amp"           && !HookServer.ampPluginInstalled()       { return String(localized: "Plugin not installed") }
             if def.id == SpotifyController.pillId && !SpotifyController.shared.isInstalled { return String(localized: "Not installed") }
+            if def.id == "integration_discord" && !DiscordController.shared.isDiscordInstalled { return String(localized: "Not installed") }
             #endif
             if def.category == .ai {
                 if let provider = ChatProvider(pillID: def.id), provider.isLocal {

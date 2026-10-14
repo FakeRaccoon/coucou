@@ -243,6 +243,8 @@ struct OverviewView: View {
             }
         case "integration_stripe":
             NSWorkspace.shared.open(URL(string: "https://dashboard.stripe.com/payments")!)
+        case "integration_discord":
+            DiscordController.shared.openDiscord()
         case "integration_notion":
             NSWorkspace.shared.open(URL(string: "https://notion.so")!)
         case "integration_calcom":
@@ -1894,6 +1896,7 @@ struct IntegrationCardView: View {
         case "integration_stripe":  return KeychainStore.shared.get("stripe-api-key") != nil
         case "integration_notion":  return KeychainStore.shared.get("notion-api-key") != nil
         case "integration_calcom":  return KeychainStore.shared.get("calcom-api-key") != nil
+        case "integration_discord": return KeychainStore.shared.get("discord-access-token") != nil
         default: return false
         }
     }
@@ -1910,6 +1913,7 @@ struct IntegrationCardView: View {
         case "integration_stripe":  return URL(string: "https://dashboard.stripe.com/payments")
         case "integration_notion":  return URL(string: "https://notion.so")
         case "integration_calcom":  return URL(string: "https://app.cal.com/bookings")
+        case "integration_discord": return URL(string: "https://discord.com/channels/@me")
         default: return nil
         }
     }
@@ -1930,6 +1934,13 @@ struct IntegrationCardView: View {
     // Vercel with recent deployments
     private var vercelHasActivity: Bool {
         task.id == "integration_vercel" && !appState.vercelDeployments.isEmpty
+    }
+
+    // Discord in a voice channel (or with recent notifications)
+    private var discordHasVoice: Bool {
+        task.id == "integration_discord" &&
+        (!appState.discordUsers.isEmpty || !appState.discordChannelName.isEmpty ||
+         !appState.discordNotifications.isEmpty)
     }
 
     // Resend with recent emails
@@ -2090,6 +2101,9 @@ struct IntegrationCardView: View {
             .transition(.opacity)
         } else if resendHasData {
             ResendCardView(emails: appState.resendEmails, total: appState.resendTotal)
+                .transition(.opacity)
+        } else if discordHasVoice {
+            DiscordVoiceCardView(state: appState)
                 .transition(.opacity)
         } else if showingDetail && githubHasPulse {
             GitHubDetailView(

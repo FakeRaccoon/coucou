@@ -373,6 +373,14 @@ final class AppState: ObservableObject {
     @Published var resendEmails: [ResendEmail] = []
     @Published var resendTotal: Int? = nil
 
+    // Discord voice (populated by DiscordController)
+    @Published var discordStatus: DiscordStatus = .idle
+    @Published var discordChannelName: String = ""
+    @Published var discordUsers: [DiscordVoiceUser] = []
+    @Published var discordSelfMute: Bool = false
+    @Published var discordSelfDeaf: Bool = false
+    @Published var discordNotifications: [DiscordNotification] = []
+
     // GitHub stats + pulse + activity (populated by GithubPoller)
     @Published var githubStats: GitHubStats? = nil
     @Published var githubPulse: GitHubPulse? = nil
@@ -720,7 +728,7 @@ final class AppState: ObservableObject {
             tasks.removeAll { $0.id == id }
             if focusId == id { focusId = mainPillId }
         } else {
-            guard activeIntegrations.count < 4 else { return }
+            guard activeIntegrations.count < 6 else { return }
             activeIntegrations.insert(id)
             if let def = PillCatalog.available.first(where: { $0.id == id }),
                !tasks.contains(where: { $0.id == id }) {
