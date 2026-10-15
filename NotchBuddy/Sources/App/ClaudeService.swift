@@ -4,7 +4,10 @@ import Security
 // MARK: - Keychain helpers
 
 enum Keychain {
-    static let service = "fr.louisraille.NotchBuddy"
+    // Own service: fork builds are ad-hoc signed and re-signed on every rebuild,
+    // so sharing items with the notarised release app would retrigger keychain
+    // password prompts on each launch.
+    static let service = "fr.louisraille.NotchBuddy.fork"
 
     static func save(key: String, value: String) {
         guard let data = value.data(using: .utf8) else { return }

@@ -53,7 +53,10 @@ struct OverviewView: View {
     var agent: AgentTask? { state.focusTask }
 
     var body: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 8) {
+            PillStripView(state: state)
+
+            HStack(spacing: 10) {
             // Left card: title row + ticker below + ↗ button overlay
             ZStack(alignment: .topLeading) {
                 CardBackground(wash: nil)
@@ -169,13 +172,10 @@ struct OverviewView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .frame(width: 322)
-
-            // Right card: agent pills
-            CardBackground(wash: nil) {
-                AgentPillsView(state: state)
+            .frame(maxWidth: .infinity)
             }
         }
+        .overlay(PillSwipeSwitcher(state: state))
         .onChange(of: state.focusId) { _, new in
             showingN8nDetail = false
             activeDiffId = nil
