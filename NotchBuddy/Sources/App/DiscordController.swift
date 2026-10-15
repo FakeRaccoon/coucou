@@ -142,6 +142,7 @@ final class DiscordController: @unchecked Sendable {
     private func connect() {
         guard sockFD == -1 else { return }
         guard let path = socketPath() else {
+            appendAppLog("discord.log", "no IPC socket found (Discord not running?)")
             scheduleReconnect(); return
         }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -179,6 +180,7 @@ final class DiscordController: @unchecked Sendable {
         readSource = src
 
         send(op: 0, payload: ["v": 1, "client_id": clientId])
+        appendAppLog("discord.log", "socket connected (\(path))")
         setStatus(.connecting)
     }
 
@@ -205,7 +207,7 @@ final class DiscordController: @unchecked Sendable {
         authenticated = false
         subscribedChannelId = nil
         pending.removeAll()
-        appendAppLog("discord", "IPC down (\(reason))")
+        appendAppLog("discord.log", "IPC down (\(reason))")
         if reason != "user" {
             setStatus(.connecting)
             scheduleReconnect()
@@ -283,6 +285,7 @@ final class DiscordController: @unchecked Sendable {
         case "READY":
             readyReceived = true
             selfId = (data["user"] as? [String: Any])?["id"] as? String
+            appendAppLog("discord.log", "READY; stored token \(accessToken.isEmpty ? "MISSING" : "present (\(accessToken.prefix(6))…)")")
             // Socket is up: resume an existing session if we still hold a token.
             if !authenticated {
                 if !accessToken.isEmpty {
@@ -297,6 +300,7 @@ final class DiscordController: @unchecked Sendable {
             let code = (data["code"] as? Int) ?? 0
             let message = (data["message"] as? String) ?? "error"
             if cmd == "AUTHENTICATE" && code == 4006 {
+                appendAppLog("discord.log", "AUTHENTICATE rejected (4006) → trying refresh")
                 if !refreshToken.isEmpty { refreshSession() }
                 else { KeychainStore.shared.remove("discord-access-token"); setStatus(.idle) }
             } else if cmd == "AUTHORIZE" {
@@ -310,7 +314,7 @@ final class DiscordController: @unchecked Sendable {
             if evt != "ERROR", let user = data["user"] as? [String: Any] {
                 authenticated = true
                 selfId = (user["id"] as? String) ?? selfId
-                appendAppLog("discord", "authenticated as \((user["username"] as? String) ?? "?")")
+                appendAppLog("discord.log", "authenticated as \((user["username"] as? String) ?? "?")")
                 setStatus(.connected)
                 subscribeGlobals()
                 command("GET_VOICE_SETTINGS")
@@ -484,7 +488,7 @@ final class DiscordController: @unchecked Sendable {
         io.async { [weak self] in
             guard let self else { return }
             guard !self.clientSecret.isEmpty else {
-                appendAppLog("discord", "authorize refused: client secret empty")
+                appendAppLog("discord.log", "authorize refused: client secret empty")
                 self.setStatus(.error("Add your Discord client id and secret first")); return
             }
             if self.sockFD == -1 { self.connect() }
@@ -497,7 +501,7 @@ final class DiscordController: @unchecked Sendable {
     /// the OAuth code we exchange for tokens.
     private func sendAuthorize() {
         wantsAuthorize = false
-        appendAppLog("discord", "AUTHORIZE sent (client \(clientId.prefix(8))…, scopes \(Self.scopes.joined(separator: ",")))")
+        appendAppLog("discord.log", "AUTHORIZE sent (client \(clientId.prefix(8))…, scopes \(Self.scopes.joined(separator: ",")))")
         command("AUTHORIZE", args: ["client_id": clientId, "scopes": Self.scopes]) { [weak self] payload in
             guard let self else { return }
             if let code = (payload["data"] as? [String: Any])?["code"] as? String {
@@ -524,11 +528,11 @@ final class DiscordController: @unchecked Sendable {
             guard let self, let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let access = json["access_token"] as? String else {
-                appendAppLog("discord", "token exchange FAILED (body: \(data.flatMap { String(data: $0, encoding: .utf8) } ?? "no data"))")
+                appendAppLog("discord.log", "token exchange FAILED (body: \(data.flatMap { String(data: $0, encoding: .utf8) } ?? "no data"))")
                 self?.setStatus(.error("Token exchange failed — check id/secret/redirect URI"))
                 return
             }
-            appendAppLog("discord", "token exchange OK")
+            appendAppLog("discord.log", "token exchange OK")
             let refresh = (json["refresh_token"] as? String) ?? ""
             KeychainStore.shared.set("discord-access-token", value: access)
             if !refresh.isEmpty { KeychainStore.shared.set("discord-refresh-token", value: refresh) }
@@ -555,11 +559,13 @@ final class DiscordController: @unchecked Sendable {
             guard let self, let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let access = json["access_token"] as? String else {
+                appendAppLog("discord.log", "refresh FAILED (body: \(data.flatMap { String(data: $0, encoding: .utf8) } ?? "no data"))")
                 KeychainStore.shared.remove("discord-access-token")
                 KeychainStore.shared.remove("discord-refresh-token")
                 self?.setStatus(.idle)
                 return
             }
+            appendAppLog("discord.log", "refresh OK")
             KeychainStore.shared.set("discord-access-token", value: access)
             if let refresh = json["refresh_token"] as? String {
                 KeychainStore.shared.set("discord-refresh-token", value: refresh)
