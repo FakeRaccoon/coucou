@@ -76,7 +76,7 @@ final class DiscordController: @unchecked Sendable {
     }
     private var accessToken: String { KeychainStore.shared.get("discord-access-token") ?? "" }
     private var refreshToken: String { KeychainStore.shared.get("discord-refresh-token") ?? "" }
-    private static let scopes = ["identify", "rpc", "rpc.notifications.read"]
+    private static let scopes = ["identify", "rpc", "rpc.notifications.read", "rpc.voice.write"]
 
     var isDiscordInstalled: Bool {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hnc.Discord") != nil
@@ -456,7 +456,8 @@ final class DiscordController: @unchecked Sendable {
     }
 
     private func subscribeGlobals() {
-        for evt in ["VOICE_CHANNEL_SELECT", "VOICE_CONNECTION_STATUS", "NOTIFICATION_CREATE"] {
+        for evt in ["VOICE_CHANNEL_SELECT", "VOICE_CONNECTION_STATUS", "NOTIFICATION_CREATE",
+                    "VOICE_SETTINGS_UPDATE"] {
             sendSubscribe(evt: evt, args: [:])
         }
     }
@@ -603,6 +604,33 @@ final class DiscordController: @unchecked Sendable {
                 guard let i = AppState.shared.tasks.firstIndex(where: { $0.id == Self.pillId }),
                       AppState.shared.tasks[i].emote == .listening else { return }
                 AppState.shared.tasks[i].emote = nil
+            }
+        }
+    }
+
+    // MARK: - Voice control
+
+    /// Toggle the local user's mic / headphones straight from the notch card.
+    func setSelfMute(_ mute: Bool) { sendVoiceSetting(["mute": mute]) }
+    func setSelfDeaf(_ deaf: Bool) { sendVoiceSetting(["deaf": deaf]) }
+
+    private func sendVoiceSetting(_ args: [String: Any]) {
+        io.async { [weak self] in
+            guard let self, self.authenticated else { return }
+            self.command("SET_VOICE_SETTINGS", args: args) { payload in
+                if (payload["evt"] as? String) == "ERROR" {
+                    let data = payload["data"] as? [String: Any] ?? [:]
+                    appendAppLog("discord.log", "SET_VOICE_SETTINGS failed (\((data["code"] as? Int) ?? 0)): \((data["message"] as? String) ?? "?")")
+                    return
+                }
+                // Apply the returned settings right away (the update event may lag)
+                if let data = payload["data"] as? [String: Any],
+                   let mute = data["mute"] as? Bool, let deaf = data["deaf"] as? Bool {
+                    DispatchQueue.main.async {
+                        AppState.shared.discordSelfMute = mute
+                        AppState.shared.discordSelfDeaf = deaf
+                    }
+                }
             }
         }
     }

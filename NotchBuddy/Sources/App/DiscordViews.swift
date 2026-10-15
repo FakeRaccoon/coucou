@@ -23,16 +23,29 @@ struct DiscordVoiceCardView: View {
                     .lineLimit(1).truncationMode(.tail)
                     .layoutPriority(1)
                 Spacer()
-                if state.discordSelfMute {
-                    Image(systemName: "mic.slash.fill")
+                // Mic / headphones toggles — control Discord straight from the notch
+                Button {
+                    DiscordController.shared.setSelfMute(!state.discordSelfMute)
+                } label: {
+                    Image(systemName: state.discordSelfMute ? "mic.slash.fill" : "mic.fill")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color(hex: "#F4505E"))
+                        .foregroundColor(state.discordSelfMute ? Color(hex: "#F4505E") : Color(hex: "#23A55A"))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.white.opacity(0.06)))
                 }
-                if state.discordSelfDeaf {
-                    Image(systemName: "speaker.slash.fill")
+                .buttonStyle(.plain)
+                .help(state.discordSelfMute ? "Unmute" : "Mute")
+                Button {
+                    DiscordController.shared.setSelfDeaf(!state.discordSelfDeaf)
+                } label: {
+                    Image(systemName: state.discordSelfDeaf ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color(hex: "#F4505E"))
+                        .foregroundColor(state.discordSelfDeaf ? Color(hex: "#F4505E") : Color(hex: "#C5C8CD"))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.white.opacity(0.06)))
                 }
+                .buttonStyle(.plain)
+                .help(state.discordSelfDeaf ? "Undeafen" : "Deafen")
                 Text("\(state.discordUsers.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(Color(hex: "#C5C8CD"))
