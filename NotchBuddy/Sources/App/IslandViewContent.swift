@@ -4014,13 +4014,15 @@ struct AgentPillsView: View {
     }
 
     private var displayTasks: [AgentTask] {
-        Array(others.prefix(4))
+        Array(others.prefix(6))
     }
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4)
-    ]
+    // 2 columns for the classic four pills; 5–6 pills go 3-across so the
+    // grid stays two rows tall inside the overview card.
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 4),
+              count: displayTasks.count > 4 ? 3 : 2)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4377,12 +4379,15 @@ struct ColumnAgentsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(others.prefix(4).enumerated()), id: \.1.id) { idx, task in
+        let list = Array(others.prefix(6))
+        // Five–six pills sit higher and tighter so the column stays inside the island.
+        let (start, step): (CGFloat, CGFloat) = list.count > 4 ? (34, 22) : (50, 24)
+        return VStack(spacing: 0) {
+            ForEach(Array(list.enumerated()), id: \.1.id) { idx, task in
                 MiniBotCanvasView(task: task)
                     .frame(width: 16 / 0.6, height: 16 / 0.6)
                     .frame(width: 16, height: 16)
-                    .position(x: 0, y: CGFloat(50 + idx * 24))
+                    .position(x: 0, y: start + CGFloat(idx) * step)
                     .animation(.spring(response: 0.5, dampingFraction: 0.72).delay(Double(idx) * 0.035), value: idx)
             }
         }
