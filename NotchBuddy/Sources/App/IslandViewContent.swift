@@ -172,9 +172,12 @@ struct OverviewView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
+            .id(state.focusId)              // recreate on focus change → crossfade below
+            .transition(.opacity)
             .frame(maxWidth: .infinity)
             }
         }
+        .animation(.easeInOut(duration: 0.18), value: state.focusId)
         .overlay(PillSwipeSwitcher(state: state))
         .onChange(of: state.focusId) { _, new in
             showingN8nDetail = false

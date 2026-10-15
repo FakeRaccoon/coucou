@@ -10,44 +10,54 @@ struct PillStripView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(state.tasks) { task in
-                    let focused = task.id == state.focusId
-                    Button {
-                        guard !focused else { return }
-                        state.setFocus(task.id)
-                        SoundEngine.shared.play("blip")
-                    } label: {
-                        HStack(spacing: 5) {
-                            MiniBotCanvasView(task: task)
-                                .frame(width: 16 / 0.6, height: 16 / 0.6)
-                                .frame(width: 16, height: 16)
-                            if focused {
-                                Text(task.id == "integration_claude"
-                                     ? ClaudeHost.pillName(hostApp: task.hostApp)
-                                     : task.name)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(Color(hex: "#F5F6F8"))
-                                    .lineLimit(1)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(state.tasks) { task in
+                        let focused = task.id == state.focusId
+                        Button {
+                            guard !focused else { return }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                state.setFocus(task.id)
                             }
-                        }
-                        .padding(.horizontal, focused ? 10 : 8)
-                        .frame(height: 26)
-                        .background(
-                            Capsule().fill(focused ? Color.white.opacity(0.10) : Color(hex: "#0E0F11"))
-                        )
-                        .overlay(
-                            Capsule().stroke(
+                            SoundEngine.shared.play("blip")
+                        } label: {
+                            HStack(spacing: 5) {
+                                MiniBotCanvasView(task: task)
+                                    .frame(width: 16 / 0.6, height: 16 / 0.6)
+                                    .frame(width: 16, height: 16)
+                                if focused {
+                                    Text(task.id == "integration_claude"
+                                         ? ClaudeHost.pillName(hostApp: task.hostApp)
+                                         : task.name)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(Color(hex: "#F5F6F8"))
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.horizontal, focused ? 10 : 8)
+                            .frame(height: 26)
+                            .background(
+                                Capsule().fill(focused ? Color.white.opacity(0.10) : Color(hex: "#0E0F11"))
+                            )
+                            .overlay(
+                                Capsule().stroke(
                                 focused ? Color.white.opacity(0.16)
                                         : Color(hex: task.color).opacity(0.28),
                                 lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .animation(.spring(response: 0.25, dampingFraction: 0.8), value: state.focusId)
+            }
+            .onChange(of: state.focusId) { _, new in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    proxy.scrollTo(new, anchor: .center)
                 }
             }
-            .padding(.horizontal, 10)
         }
         .frame(height: 28)
     }
@@ -96,7 +106,10 @@ struct PillSwipeSwitcher: NSViewRepresentable {
                 accumulator = 0
                 return
             }
-            accumulator += event.deltaX
+            // scrollingDeltaX is the refined, momentum-aware delta; fall back to deltaX
+            let delta = abs(event.scrollingDeltaX) > 0.01 ? event.scrollingDeltaX : event.deltaX
+            accumulator += delta
+            if abs(delta) < 0.5 { accumulator *= 0.7 }   // bleed off slow drift
             // Natural scrolling: fingers left → deltaX > 0 → next pill.
             if accumulator > 8 {
                 accumulator = 0
@@ -111,7 +124,9 @@ struct PillSwipeSwitcher: NSViewRepresentable {
             guard let state, state.tasks.count > 1,
                   let current = state.tasks.firstIndex(where: { $0.id == state.focusId }) else { return }
             let next = (current + direction + state.tasks.count) % state.tasks.count
-            state.setFocus(state.tasks[next].id)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                state.setFocus(state.tasks[next].id)
+            }
             SoundEngine.shared.play("blip")
         }
     }
