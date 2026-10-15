@@ -84,6 +84,8 @@ struct PillSwipeSwitcher: NSViewRepresentable {
         weak var state: AppState?
         private var monitor: Any?
         private var accumulator: CGFloat = 0
+        private var gestureConsumed = false
+        private var lastFireAt = Date.distantPast
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -102,25 +104,39 @@ struct PillSwipeSwitcher: NSViewRepresentable {
 
         private func handleScroll(_ event: NSEvent) {
             guard let state, event.window === window,
-                  abs(event.deltaX) > abs(event.deltaY) else {
+                  abs(event.deltaX) > abs(event.deltaY) else { return }
+
+            // Momentum (fingers already lifted) never switches pills.
+            if event.momentumPhase != [] {
                 accumulator = 0
                 return
             }
-            // scrollingDeltaX is the refined, momentum-aware delta; fall back to deltaX
+            // A new touch (or the end of one) re-arms the single-fire latch.
+            if event.phase == .began || event.phase == .ended || event.phase == .cancelled {
+                gestureConsumed = false
+                accumulator = 0
+            }
+            // One swipe = exactly one adjacent pill: latched until the gesture ends.
+            if gestureConsumed { return }
+            // Discrete devices (mouse wheels) report no phase — rate-limit instead.
+            if event.phase == [] {
+                guard Date().timeIntervalSince(lastFireAt) > 0.2 else { return }
+            }
+
             let delta = abs(event.scrollingDeltaX) > 0.01 ? event.scrollingDeltaX : event.deltaX
             accumulator += delta
-            if abs(delta) < 0.5 { accumulator *= 0.7 }   // bleed off slow drift
             // Natural scrolling: fingers left → deltaX > 0 → next pill.
             if accumulator > 8 {
-                accumulator = 0
-                swipe(1)
+                fire(1)
             } else if accumulator < -8 {
-                accumulator = 0
-                swipe(-1)
+                fire(-1)
             }
         }
 
-        private func swipe(_ direction: Int) {
+        private func fire(_ direction: Int) {
+            accumulator = 0
+            gestureConsumed = true
+            lastFireAt = Date()
             guard let state, state.tasks.count > 1,
                   let current = state.tasks.firstIndex(where: { $0.id == state.focusId }) else { return }
             let next = (current + direction + state.tasks.count) % state.tasks.count
