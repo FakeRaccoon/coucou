@@ -147,6 +147,64 @@ final class SpacePoller: @unchecked Sendable {
         }
     }
 
+    // MARK: - Upload result
+    // Verified against the live API: POST /issue-result {id:0, t_issue_id,
+    // file: data-URI, extension} → 200 with the stored file URL.
+
+    func uploadResult(issueId: Int, imageData: Data, ext: String,
+                      completion: @escaping (Bool, String?) -> Void) {
+        performUpload(issueId: issueId, imageData: imageData, ext: ext, isRetry: false, completion: completion)
+    }
+
+    private func performUpload(issueId: Int, imageData: Data, ext: String,
+                               isRetry: Bool, completion: @escaping (Bool, String?) -> Void) {
+        let token = KeychainStore.shared.get("space-token") ?? ""
+        guard !token.isEmpty else {
+            completion(false, "Belum login ke Space")
+            return
+        }
+        let mime = (ext == "jpg" || ext == "jpeg") ? "image/jpeg" : "image/png"
+        let body: [String: Any] = [
+            "id": 0,
+            "t_issue_id": issueId,
+            "file": "data:\(mime);base64,\(imageData.base64EncodedString())",
+            "extension": ext,
+        ]
+        var req = URLRequest(url: URL(string: "\(Self.api)/v1/issue-result")!, timeoutInterval: 60)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
+            if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+                if isRetry {
+                    completion(false, "Sesi kedaluwarsa — coba lagi")
+                    return
+                }
+                self?.attemptLogin { _ in
+                    self?.performUpload(issueId: issueId, imageData: imageData, ext: ext,
+                                        isRetry: true, completion: completion)
+                }
+                return
+            }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                appendAppLog("space.log", "upload result FAILED (\(code))")
+                completion(false, "Upload gagal (\(code))")
+                return
+            }
+            var url: String? = nil
+            if let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let payload = json["data"] as? [String: Any] {
+                url = payload["file"] as? String
+            }
+            appendAppLog("space.log", "upload result OK for issue \(issueId) → \(url ?? "?")")
+            completion(true, url)
+        }.resume()
+    }
+
     // MARK: - Login (auto JWT refresh)
 
     private func attemptLogin(completion: @escaping (Bool) -> Void) {

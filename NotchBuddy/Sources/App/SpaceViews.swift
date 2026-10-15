@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Space card (expanded pill)
 // My tasks due today (+ overdue & open) across all Space projects,
@@ -6,6 +8,8 @@ import SwiftUI
 
 struct SpaceCardView: View {
     @ObservedObject var state: AppState
+    @State private var uploadingTaskId: Int? = nil
+    @State private var feedback: (text: String, good: Bool)? = nil
 
     private var todayString: String {
         let fmt = DateFormatter()
@@ -69,6 +73,12 @@ struct SpaceCardView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(Color(hex: "#C5C8CD"))
                     .monospacedDigit()
+                if let feedback {
+                    Text(feedback.text)
+                        .font(.system(size: 10, weight: feedback.good ? .semibold : .regular))
+                        .foregroundColor(feedback.good ? Color(hex: "#23A55A") : Color(hex: "#F4505E"))
+                        .lineLimit(1)
+                }
                 Spacer()
             }
             .padding(.top, 6).padding(.leading, 108).padding(.trailing, 36)
@@ -136,6 +146,72 @@ struct SpaceCardView: View {
                 Text(shortDate(due))
                     .font(.system(size: 10))
                     .foregroundColor(Color(hex: "#F4505E"))
+            }
+            uploadButton(task)
+        }
+    }
+
+    /// Screenshot to clipboard (⌘⇧4+Ctrl) → click = sent. No clipboard image → file picker.
+    private func uploadButton(_ task: SpaceTask) -> some View {
+        Button {
+            guard uploadingTaskId == nil else { return }
+            uploadFor(task)
+        } label: {
+            Group {
+                if uploadingTaskId == task.id {
+                    ProgressView()
+                        .scaleEffect(0.45)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "arrow.up.to.line")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+            }
+            .foregroundColor(Color(hex: "#8E939C"))
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(Color.white.opacity(0.06)))
+        }
+        .buttonStyle(.plain)
+        .help("Upload hasil: screenshot di clipboard, atau pilih file")
+        .disabled(uploadingTaskId != nil)
+    }
+
+    private func uploadFor(_ task: SpaceTask) {
+        var imageData: Data?
+        var ext = "png"
+
+        if let png = NSPasteboard.general.data(forType: .png) {
+            imageData = png
+        } else if let images = NSPasteboard.general.readObjects(forClasses: [NSImage.self]),
+                  let image = images.first as? NSImage,
+                  let tiff = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff) {
+            imageData = rep.representation(using: .png, properties: [:])
+        } else {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+            panel.allowedContentTypes = [.png, .jpeg]
+            guard panel.runModal() == .OK, let url = panel.url,
+                  let data = try? Data(contentsOf: url) else { return }
+            imageData = data
+            ext = url.pathExtension.lowercased()
+        }
+        guard let imageData, !imageData.isEmpty else { return }
+
+        uploadingTaskId = task.id
+        feedback = nil
+        SpacePoller.shared.uploadResult(issueId: task.id, imageData: imageData, ext: ext) { ok, message in
+            uploadingTaskId = nil
+            if ok {
+                feedback = ("✓ hasil terkirim", true)
+                SoundEngine.shared.play("finish")
+            } else {
+                feedback = (message ?? "Upload gagal", false)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                if self.feedback?.text.hasPrefix("✓") == true || !ok { self.feedback = nil }
             }
         }
     }
