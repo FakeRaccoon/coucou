@@ -81,6 +81,8 @@ final class KeychainStore: @unchecked Sendable {
         // Discord OAuth (DiscordController)
         "discord-client-id", "discord-client-secret", "discord-redirect-uri",
         "discord-access-token", "discord-refresh-token",
+        // Space sprint (SpacePoller)
+        "space-token", "space-project-id", "space-email", "space-password",
         // Portfolio exchange credentials
         "portfolio-binance-key",  "portfolio-binance-secret",
         "portfolio-okx-key",      "portfolio-okx-secret",      "portfolio-okx-passphrase",
@@ -97,8 +99,13 @@ final class KeychainStore: @unchecked Sendable {
     }
 
     /// Thread-safe read — never touches the Keychain.
+    /// Thread-safe read: cache first, then the Keychain itself (and cache it),
+    /// so a key forgotten in `allKeys` can never come back as nil.
     func get(_ key: String) -> String? {
-        lock.withLock { cache[key] }
+        if let cached = lock.withLock({ cache[key] }) { return cached }
+        let loaded = Keychain.load(key: key)
+        if let loaded { lock.withLock { cache[key] = loaded } }
+        return loaded
     }
 
     /// Updates cache + persists to Keychain.
