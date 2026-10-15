@@ -381,8 +381,8 @@ final class AppState: ObservableObject {
     @Published var discordSelfDeaf: Bool = false
     @Published var discordNotifications: [DiscordNotification] = []
 
-    // Space sprint (populated by SpacePoller)
-    @Published var spaceSprint: SpaceSprint? = nil
+    // Space sprint (populated by SpacePoller) — my tasks across all projects
+    @Published var spaceTasks: [SpaceTask] = []
     @Published var spaceError: String? = nil
     @Published var spaceUserId: Int = 26
 

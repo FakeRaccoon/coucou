@@ -8,35 +8,22 @@ struct SpaceTask: Identifiable, Equatable {
     let point: Double
     let duedate: String?
     let moduleName: String
+    let projectName: String
     let done: Bool
     let userId: Int
-    let userName: String
     let urgent: Bool
 }
 
-struct SpacePoint: Identifiable, Equatable {
-    let id: Int
-    let name: String
-    let initial: String
-    let point: Double
-}
-
-struct SpaceSprint: Equatable {
-    var totalIssues: Int
-    var tasks: [SpaceTask]
-    var points: [SpacePoint]
-    var dateRange: String
-}
-
 // MARK: - SpacePoller
-// Polls the Space task tracker (space.venturo.id) for the current sprint
-// week — the same call the web app makes: Bearer JWT + project id, Monday
-// to Friday. Token + project id live in the Keychain (Settings → Space).
+// Pulls "my" tasks for today across ALL Space projects: project-team lists
+// the user's projects, then sprint-issues is fetched per project (the same
+// calls the web app makes). Login (email/password in Keychain) refreshes
+// the JWT automatically on 401. Poll every 5 minutes.
 
 final class SpacePoller: @unchecked Sendable {
     static let shared = SpacePoller()
     static let pillId = "integration_space"
-    private static let baseURL = "https://space-api.venturo.id/api/v3"
+    private static let api = "https://space-api.venturo.id/api"
 
     private var timer: DispatchSourceTimer?
     private init() {}
@@ -62,95 +49,105 @@ final class SpacePoller: @unchecked Sendable {
                 }
                 return
             }
-            attemptLogin { _ in self.poll(isRetry: true) }
+            attemptLogin { [weak self] _ in self?.poll(isRetry: true) }
             return
         }
-        let projectId = KeychainStore.shared.get("space-project-id").flatMap { Int($0) } ?? 45
 
-        let cal = Calendar(identifier: .iso8601)
-        let daysFromMonday = (cal.component(.weekday, from: cal.startOfDay(for: Date())) + 5) % 7
-        let monday = cal.date(byAdding: .day, value: -daysFromMonday, to: cal.startOfDay(for: Date()))!
-        let friday = cal.date(byAdding: .day, value: 4, to: monday)!
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        let today = fmt.string(from: cal.startOfDay(for: Date()))
-        let start = fmt.string(from: monday)
-        let end = fmt.string(from: friday)
+        let uid = Int(KeychainStore.shared.get("space-user-id") ?? "") ?? 26
 
-        var comps = URLComponents(string: "\(Self.baseURL)/sprint-issues")!
-        comps.queryItems = [
-            URLQueryItem(name: "project_id", value: String(projectId)),
-            URLQueryItem(name: "t_sprint_id", value: "null"),
-            URLQueryItem(name: "isUncategorized", value: "false"),
-            URLQueryItem(name: "start_date", value: start),
-            URLQueryItem(name: "end_date", value: end),
-        ]
-        var req = URLRequest(url: comps.url!, timeoutInterval: 15)
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        getJSON("/v1/project-team?user_auth_id=\(uid)&akses_nama=User", token: token) { [weak self] json in
+            guard let self, let json,
+                  let data = json["data"] as? [String: Any],
+                  let projects = data["dataProject"] as? [[String: Any]] else { return }
+            let targets = projects.compactMap { project -> (String, String)? in
+                guard let id = project["id"] as? String,
+                      let name = project["name"] as? String else { return nil }
+                return (id, name)
+            }
+            guard !targets.isEmpty else { return }
 
-        URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
-            guard let self, let data else { return }
-            if let http = response as? HTTPURLResponse, http.statusCode == 401 {
-                if isRetry {
-                    DispatchQueue.main.async {
-                        AppState.shared.spaceError = "Login failed — check Space email/password in Settings"
+            // Current Mon–Fri sprint week, same window the web app uses.
+            let cal = Calendar(identifier: .iso8601)
+            let daysFromMonday = (cal.component(.weekday, from: cal.startOfDay(for: Date())) + 5) % 7
+            let monday = cal.date(byAdding: .day, value: -daysFromMonday, to: cal.startOfDay(for: Date()))!
+            let friday = cal.date(byAdding: .day, value: 4, to: monday)!
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            let today = fmt.string(from: cal.startOfDay(for: Date()))
+            let start = fmt.string(from: monday)
+            let end = fmt.string(from: friday)
+
+            let group = DispatchGroup()
+            let results = ResultsBox()
+
+            for (projectId, projectName) in targets {
+                group.enter()
+                var comps = URLComponents(string: "\(Self.api)/v3/sprint-issues")!
+                comps.queryItems = [
+                    URLQueryItem(name: "project_id", value: projectId),
+                    URLQueryItem(name: "t_sprint_id", value: "null"),
+                    URLQueryItem(name: "isUncategorized", value: "false"),
+                    URLQueryItem(name: "start_date", value: start),
+                    URLQueryItem(name: "end_date", value: end),
+                ]
+                var req = URLRequest(url: comps.url!, timeoutInterval: 15)
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                req.setValue("application/json", forHTTPHeaderField: "Accept")
+
+                URLSession.shared.dataTask(with: req) { data, response, _ in
+                    defer { group.leave() }
+                    if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+                        results.markAuthFailure()
+                        return
                     }
-                    return
+                    guard let data,
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let payload = json["data"] as? [String: Any],
+                          let issues = payload["dataIssues"] as? [[String: Any]] else { return }
+
+                    for raw in issues {
+                        guard let id = raw["id"] as? Int,
+                              let name = raw["name"] as? String,
+                              (raw["user_auth_id"] as? Int) == uid else { continue }
+                        let pct = (raw["percentage_acceptance"] as? Double) ?? 0
+                        results.add(SpaceTask(
+                            id: id,
+                            name: name,
+                            point: (raw["point"] as? Double) ?? 0,
+                            duedate: raw["duedate"] as? String,
+                            moduleName: (raw["module_name"] as? String) ?? "",
+                            projectName: projectName,
+                            done: pct >= 100,
+                            userId: uid,
+                            urgent: (raw["is_urgent"] as? Bool) ?? false))
+                    }
+                }.resume()
+            }
+
+            group.notify(queue: .main) { [weak self] in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    let app = AppState.shared
+                    if results.sawAuthFailure && !isRetry {
+                        self.attemptLogin { _ in self.poll(isRetry: true) }
+                        return
+                    }
+                    if results.sawAuthFailure {
+                        app.spaceError = "Space login failed — check email/password in Settings"
+                        return
+                    }
+                    app.spaceTasks = results.tasks
+                    app.spaceError = nil
+                    let dueNow = results.tasks.filter { $0.duedate == today && !$0.done }
+                    self.updateBadge(tasks: dueNow, today: today)
+                    appendAppLog("space.log", "polled uid=\(uid): projects=\(targets.count) "
+                        + "mine-today=\(dueNow.count) mine-total=\(results.tasks.count)")
                 }
-                // JWT expired: log in again with the stored credentials, then retry once.
-                attemptLogin { _ in self.poll(isRetry: true) }
-                return
             }
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let payload = json["data"] as? [String: Any] else { return }
-
-            var tasks: [SpaceTask] = []
-            for raw in (payload["dataIssues"] as? [[String: Any]]) ?? [] {
-                guard let id = raw["id"] as? Int,
-                      let name = raw["name"] as? String else { continue }
-                let pct = (raw["percentage_acceptance"] as? Double) ?? 0
-                tasks.append(SpaceTask(
-                    id: id,
-                    name: name,
-                    point: (raw["point"] as? Double) ?? 0,
-                    duedate: raw["duedate"] as? String,
-                    moduleName: (raw["module_name"] as? String) ?? "",
-                    done: pct >= 100,
-                    userId: (raw["user_auth_id"] as? Int) ?? 0,
-                    userName: (raw["user_auth_name"] as? String) ?? "",
-                    urgent: (raw["is_urgent"] as? Bool) ?? false))
-            }
-            var points: [SpacePoint] = []
-            for raw in (payload["dataPoint"] as? [[String: Any]]) ?? [] {
-                guard let id = raw["id"] as? Int, let name = raw["name"] as? String else { continue }
-                points.append(SpacePoint(id: id, name: name,
-                                         initial: (raw["initial"] as? String) ?? "",
-                                         point: (raw["point"] as? Double) ?? 0))
-            }
-            tasks.sort { a, b in
-                if a.done != b.done { return !a.done }   // open tasks first
-                return (a.duedate ?? "9999") < (b.duedate ?? "9999")
-            }
-
-            DispatchQueue.main.async {
-                let app = AppState.shared
-                app.spaceSprint = SpaceSprint(
-                    totalIssues: (payload["totalIssue"] as? Int) ?? tasks.count,
-                    tasks: tasks,
-                    points: points,
-                    dateRange: "\(start.suffix(5)) – \(end.suffix(5))")
-                app.spaceUserId = Int(KeychainStore.shared.get("space-user-id") ?? "") ?? 26
-                app.spaceError = nil
-                let mine = tasks.filter { $0.userId == app.spaceUserId }
-                self.updateBadge(tasks: mine, today: today)
-            }
-        }.resume()
+        }
     }
 
     // MARK: - Login (auto JWT refresh)
-    // Verified against the live API: GET /auth/csrf → POST /auth/login with
-    // {email, password} + X-CSRF-Token → data.access_token.
 
     private func attemptLogin(completion: @escaping (Bool) -> Void) {
         guard let email = KeychainStore.shared.get("space-email"), !email.isEmpty,
@@ -175,7 +172,7 @@ final class SpacePoller: @unchecked Sendable {
     private func login(email: String, password: String, completion: @escaping (Bool) -> Void) {
         csrf { csrfToken in
             guard let csrfToken else { completion(false); return }
-            var req = URLRequest(url: URL(string: "\(Self.baseURL)/auth/login")!, timeoutInterval: 15)
+            var req = URLRequest(url: URL(string: "\(Self.api)/v1/auth/login")!, timeoutInterval: 15)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -197,7 +194,7 @@ final class SpacePoller: @unchecked Sendable {
     }
 
     private func csrf(_ completion: @escaping (String?) -> Void) {
-        var req = URLRequest(url: URL(string: "\(Self.baseURL)/auth/csrf")!, timeoutInterval: 15)
+        var req = URLRequest(url: URL(string: "\(Self.api)/v1/auth/csrf")!, timeoutInterval: 15)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         URLSession.shared.dataTask(with: req) { data, _, _ in
             guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -209,11 +206,45 @@ final class SpacePoller: @unchecked Sendable {
         }.resume()
     }
 
+    private func getJSON(_ path: String, token: String, completion: @escaping ([String: Any]?) -> Void) {
+        var req = URLRequest(url: URL(string: Self.api + path)!, timeoutInterval: 15)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: req) { data, response, _ in
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                completion(nil)
+                return
+            }
+            completion(json)
+        }.resume()
+    }
+
+    // MARK: - Badge
+
     @MainActor
     private func updateBadge(tasks: [SpaceTask], today: String) {
         let app = AppState.shared
         guard let idx = app.tasks.firstIndex(where: { $0.id == Self.pillId }) else { return }
         let dueToday = tasks.contains { $0.duedate == today && !$0.done }
         app.tasks[idx].pillBadge = dueToday ? .finished : nil
+    }
+}
+
+/// Thread-safe accumulator for the parallel project fetches.
+private final class ResultsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _tasks: [SpaceTask] = []
+    private var _sawAuthFailure = false
+
+    var tasks: [SpaceTask] { lock.withLock { _tasks } }
+    var sawAuthFailure: Bool { lock.withLock { _sawAuthFailure } }
+
+    func add(_ task: SpaceTask) {
+        lock.withLock { _tasks.append(task) }
+    }
+
+    func markAuthFailure() {
+        lock.withLock { _sawAuthFailure = true }
     }
 }

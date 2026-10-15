@@ -110,7 +110,6 @@ struct SettingsView: View {
     @State private var discordClientSecret: String = KeychainStore.shared.get("discord-client-secret") ?? ""
     @State private var discordRedirect: String     = KeychainStore.shared.get("discord-redirect-uri")  ?? "http://localhost"
     @State private var spaceToken: String     = KeychainStore.shared.get("space-token")     ?? ""
-    @State private var spaceProjectId: String = KeychainStore.shared.get("space-project-id") ?? "45"
     @State private var spaceUserId: String    = KeychainStore.shared.get("space-user-id")  ?? "26"
     @State private var spaceEmail: String     = KeychainStore.shared.get("space-email")     ?? ""
     @State private var spacePassword: String  = KeychainStore.shared.get("space-password")  ?? ""
@@ -1341,8 +1340,6 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                     SecureField("Password", text: $spacePassword)
                         .textFieldStyle(.roundedBorder)
-                    TextField("Project ID", text: $spaceProjectId)
-                        .textFieldStyle(.roundedBorder)
                     TextField("User ID", text: $spaceUserId)
                         .textFieldStyle(.roundedBorder)
                     Text("With email + password filled, Coucou logs in by itself and refreshes the JWT whenever it expires (sprint Mon–Fri of the current week). Project ID is the number in your sprint URL.")
@@ -2128,7 +2125,6 @@ struct SettingsView: View {
         saveKey("discord-client-secret", value: discordClientSecret)
         saveKey("discord-redirect-uri",  value: discordRedirect)
         saveKey("space-token",       value: spaceToken)
-        saveKey("space-project-id",  value: spaceProjectId)
         saveKey("space-user-id",     value: spaceUserId)
         saveKey("space-email",       value: spaceEmail)
         saveKey("space-password",    value: spacePassword)

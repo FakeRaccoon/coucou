@@ -1950,10 +1950,10 @@ struct IntegrationCardView: View {
          !appState.discordNotifications.isEmpty)
     }
 
-    // Space with sprint data (or an auth error to show)
+    // Space with today's tasks (or an auth error to show)
     private var spaceHasData: Bool {
         task.id == "integration_space" &&
-        (appState.spaceSprint != nil || appState.spaceError != nil)
+        (!appState.spaceTasks.isEmpty || appState.spaceError != nil)
     }
 
     // Resend with recent emails
