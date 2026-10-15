@@ -9,6 +9,9 @@ struct SpaceTask: Identifiable, Equatable {
     let duedate: String?
     let moduleName: String
     let done: Bool
+    let userId: Int
+    let userName: String
+    let urgent: Bool
 }
 
 struct SpacePoint: Identifiable, Equatable {
@@ -113,7 +116,10 @@ final class SpacePoller: @unchecked Sendable {
                     point: (raw["point"] as? Double) ?? 0,
                     duedate: raw["duedate"] as? String,
                     moduleName: (raw["module_name"] as? String) ?? "",
-                    done: pct >= 100))
+                    done: pct >= 100,
+                    userId: (raw["user_auth_id"] as? Int) ?? 0,
+                    userName: (raw["user_auth_name"] as? String) ?? "",
+                    urgent: (raw["is_urgent"] as? Bool) ?? false))
             }
             var points: [SpacePoint] = []
             for raw in (payload["dataPoint"] as? [[String: Any]]) ?? [] {
@@ -134,8 +140,10 @@ final class SpacePoller: @unchecked Sendable {
                     tasks: tasks,
                     points: points,
                     dateRange: "\(start.suffix(5)) – \(end.suffix(5))")
+                app.spaceUserId = Int(KeychainStore.shared.get("space-user-id") ?? "") ?? 26
                 app.spaceError = nil
-                self.updateBadge(tasks: tasks, today: today)
+                let mine = tasks.filter { $0.userId == app.spaceUserId }
+                self.updateBadge(tasks: mine, today: today)
             }
         }.resume()
     }

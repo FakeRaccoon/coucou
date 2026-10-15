@@ -384,6 +384,7 @@ final class AppState: ObservableObject {
     // Space sprint (populated by SpacePoller)
     @Published var spaceSprint: SpaceSprint? = nil
     @Published var spaceError: String? = nil
+    @Published var spaceUserId: Int = 26
 
     // GitHub stats + pulse + activity (populated by GithubPoller)
     @Published var githubStats: GitHubStats? = nil
