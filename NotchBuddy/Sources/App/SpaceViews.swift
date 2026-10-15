@@ -13,17 +13,14 @@ struct SpaceCardView: View {
         return fmt.string(from: Date())
     }
 
-    // Today = due today (any state) + overdue & still open
+    // Strictly today: due today (done or open). No overdue backfill.
     private var todaysTasks: [SpaceTask] {
         state.spaceTasks
-            .filter { task in
-                if task.duedate == todayString { return true }
-                return (task.duedate ?? "9999") < todayString && !task.done
-            }
+            .filter { $0.duedate == todayString }
             .sorted { a, b in
                 if a.done != b.done { return !a.done }
                 if a.urgent != b.urgent { return a.urgent }
-                return (a.duedate ?? "9999") < (b.duedate ?? "9999")
+                return a.name < b.name
             }
     }
 
