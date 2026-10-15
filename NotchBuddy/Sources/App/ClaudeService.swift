@@ -56,6 +56,45 @@ enum Keychain {
     }
 }
 
+// MARK: - Fork secret file store
+// Fork builds keep their secrets in a 0600 JSON file instead of the login
+// keychain: every rebuild changed the app's signing identity, which kept
+// macOS re-asking the keychain password for items the previous build wrote.
+// Personal machine, single user — trading the keychain for zero prompts.
+
+enum ForkSecretFile {
+    static let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("NotchBuddy/fork-secrets.json")
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: String]? = nil
+
+    static func all() -> [String: String] {
+        lock.withLock {
+            if let cache { return cache }
+            let data = try? Data(contentsOf: url)
+            let dict = (data.flatMap { try? JSONDecoder().decode([String: String].self, from: $0) }) ?? [:]
+            cache = dict
+            return dict
+        }
+    }
+
+    static func get(_ key: String) -> String? { all()[key] }
+
+    static func set(_ key: String, _ value: String) {
+        let data: Data? = lock.withLock {
+            var dict = cache ?? all()
+            if value.isEmpty { dict.removeValue(forKey: key) } else { dict[key] = value }
+            cache = dict
+            return try? JSONEncoder().encode(dict)
+        }
+        guard let data else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+}
+
 // MARK: - Keychain cache (reads each key ONCE at launch; all subsequent access via dict)
 
 final class KeychainStore: @unchecked Sendable {
@@ -93,35 +132,32 @@ final class KeychainStore: @unchecked Sendable {
 
     private init() {
         // Called once, on main thread (AppDelegate triggers shared at launch).
-        for key in Self.allKeys {
-            if let v = Keychain.load(key: key) { cache[key] = v }
+        // Fork build: secrets live in the local file store, the Keychain is
+        // never touched (that's what kept prompting for passwords).
+        for (key, value) in ForkSecretFile.all() where Self.allKeys.contains(key) {
+            cache[key] = value
         }
     }
 
-    /// Thread-safe read — never touches the Keychain.
-    /// Thread-safe read: cache first, then the Keychain itself (and cache it),
-    /// so a key forgotten in `allKeys` can never come back as nil.
+    /// Thread-safe read: cache → file store. The login keychain is never hit,
+    /// so a signing-identity change can never trigger a password prompt again.
     func get(_ key: String) -> String? {
         if let cached = lock.withLock({ cache[key] }) { return cached }
-        let loaded = Keychain.load(key: key)
+        let loaded = ForkSecretFile.get(key)
         if let loaded { lock.withLock { cache[key] = loaded } }
         return loaded
     }
 
-    /// Updates cache + persists to Keychain.
+    /// Updates cache + persists to the file store.
     func set(_ key: String, value: String) {
         lock.withLock { cache[key] = value }
-        Keychain.save(key: key, value: value)
+        ForkSecretFile.set(key, value)
     }
 
-    /// Removes from cache + Keychain only if the key was previously set.
+    /// Removes from cache + file store only if the key was previously set.
     func remove(_ key: String) {
-        let had = lock.withLock { () -> Bool in
-            let exists = cache[key] != nil
-            cache[key] = nil
-            return exists
-        }
-        if had { Keychain.delete(key: key) }
+        lock.withLock { cache[key] = nil }
+        ForkSecretFile.set(key, "")
     }
 }
 
