@@ -4,7 +4,7 @@
 # macOS from re-asking keychain password after every rebuild: keychain items
 # the app creates stay readable by the next build.
 set -e
-IDENTITY="23E39AB879E2130FD2FD33B82C942F6CD2FC586E"
+IDENTITY="286DB909645946F94705C5A5B0A617265E1D20A5" # "Coucou Dev" — self-signed, no Apple team
 cd "$(dirname "$0")/../NotchBuddy"
 
 xcodegen
