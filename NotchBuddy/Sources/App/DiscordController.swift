@@ -611,18 +611,28 @@ final class DiscordController: @unchecked Sendable {
     // MARK: - Voice control
 
     /// Toggle the local user's mic / headphones straight from the notch card.
-    func setSelfMute(_ mute: Bool) { sendVoiceSetting(["mute": mute]) }
-    func setSelfDeaf(_ deaf: Bool) { sendVoiceSetting(["deaf": deaf]) }
+    func setSelfMute(_ mute: Bool) {
+        appendAppLog("discord.log", "mic button → mute=\(mute)")
+        sendVoiceSetting(["mute": mute])
+    }
+    func setSelfDeaf(_ deaf: Bool) {
+        appendAppLog("discord.log", "speaker button → deaf=\(deaf)")
+        sendVoiceSetting(["deaf": deaf])
+    }
 
     private func sendVoiceSetting(_ args: [String: Any]) {
         io.async { [weak self] in
-            guard let self, self.authenticated else { return }
+            guard let self, self.authenticated else {
+                appendAppLog("discord.log", "SET_VOICE_SETTINGS skipped (not authenticated)")
+                return
+            }
             self.command("SET_VOICE_SETTINGS", args: args) { payload in
                 if (payload["evt"] as? String) == "ERROR" {
                     let data = payload["data"] as? [String: Any] ?? [:]
                     appendAppLog("discord.log", "SET_VOICE_SETTINGS failed (\((data["code"] as? Int) ?? 0)): \((data["message"] as? String) ?? "?")")
                     return
                 }
+                appendAppLog("discord.log", "SET_VOICE_SETTINGS applied")
                 // Apply the returned settings right away (the update event may lag)
                 if let data = payload["data"] as? [String: Any],
                    let mute = data["mute"] as? Bool, let deaf = data["deaf"] as? Bool {

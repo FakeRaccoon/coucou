@@ -53,7 +53,9 @@ struct DiscordVoiceCardView: View {
             }
             .padding(.top, 6)
             .padding(.leading, 108)
-            .padding(.trailing, 36)
+            // 60pt clears the card's top-right jump (↗) button, which renders
+            // above this header and would otherwise swallow the toggles' clicks.
+            .padding(.trailing, 60)
 
             // Speaker rows — green ring while someone talks, mic/deaf marks when muted
             VStack(alignment: .leading, spacing: 3) {
