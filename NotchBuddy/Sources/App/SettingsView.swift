@@ -111,6 +111,8 @@ struct SettingsView: View {
     @State private var discordRedirect: String     = KeychainStore.shared.get("discord-redirect-uri")  ?? "http://localhost"
     @State private var spaceToken: String     = KeychainStore.shared.get("space-token")     ?? ""
     @State private var spaceProjectId: String = KeychainStore.shared.get("space-project-id") ?? "45"
+    @State private var spaceEmail: String     = KeychainStore.shared.get("space-email")     ?? ""
+    @State private var spacePassword: String  = KeychainStore.shared.get("space-password")  ?? ""
     @AppStorage(CryptoSettings.exchangeKey)     private var cryptoExchange = CryptoExchange.coinbase.rawValue
     @AppStorage(CryptoSettings.currencyKey)     private var cryptoCurrency = "EUR"
     @AppStorage(CryptoSettings.coinsKey)        private var cryptoCoins = CryptoSettings.defaultCoins
@@ -1334,11 +1336,13 @@ struct SettingsView: View {
                         Circle().fill(Color(hex: "#239D9C")).frame(width: 8, height: 8)
                         Text("Space").font(.system(size: 12, weight: .semibold))
                     }
-                    SecureField("Bearer token", text: $spaceToken)
+                    TextField("Email", text: $spaceEmail)
+                        .textFieldStyle(.roundedBorder)
+                    SecureField("Password", text: $spacePassword)
                         .textFieldStyle(.roundedBorder)
                     TextField("Project ID", text: $spaceProjectId)
                         .textFieldStyle(.roundedBorder)
-                    Text("Open Space in the browser → DevTools → Network → any space-api request → copy the Authorization header value (without \"Bearer \"). Token is a session JWT: paste a fresh one when it expires. Project ID is the number in the sprint URL.")
+                    Text("With email + password filled, Coucou logs in by itself and refreshes the JWT whenever it expires (sprint Mon–Fri of the current week). Project ID is the number in your sprint URL.")
                         .font(.system(size: 10))
                         .foregroundColor(Color(hex: "#8E939C"))
                 }
@@ -2122,7 +2126,9 @@ struct SettingsView: View {
         saveKey("discord-redirect-uri",  value: discordRedirect)
         saveKey("space-token",       value: spaceToken)
         saveKey("space-project-id",  value: spaceProjectId)
-        if !spaceToken.isEmpty { SpacePoller.shared.pollNow() }
+        saveKey("space-email",       value: spaceEmail)
+        saveKey("space-password",    value: spacePassword)
+        if !spaceToken.isEmpty || !spaceEmail.isEmpty { SpacePoller.shared.pollNow() }
         statusMessage = String(localized: "status.integrations-saved")
     }
 

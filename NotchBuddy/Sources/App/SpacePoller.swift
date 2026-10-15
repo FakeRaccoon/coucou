@@ -49,9 +49,19 @@ final class SpacePoller: @unchecked Sendable {
 
     func pollNow() { DispatchQueue.global(qos: .utility).async { [weak self] in self?.poll() } }
 
-    private func poll() {
+    private func poll(isRetry: Bool = false) {
         guard !DemoEngine.isPollerPaused else { return }
-        guard let token = KeychainStore.shared.get("space-token"), !token.isEmpty else { return }
+        let token = KeychainStore.shared.get("space-token") ?? ""
+        if token.isEmpty {
+            guard !isRetry else {
+                DispatchQueue.main.async {
+                    AppState.shared.spaceError = "Login failed — check Space email/password in Settings"
+                }
+                return
+            }
+            attemptLogin { _ in self.poll(isRetry: true) }
+            return
+        }
         let projectId = KeychainStore.shared.get("space-project-id").flatMap { Int($0) } ?? 45
 
         let cal = Calendar(identifier: .iso8601)
@@ -79,9 +89,14 @@ final class SpacePoller: @unchecked Sendable {
         URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
             guard let self, let data else { return }
             if let http = response as? HTTPURLResponse, http.statusCode == 401 {
-                DispatchQueue.main.async {
-                    AppState.shared.spaceError = "Token expired — paste a fresh one in Settings"
+                if isRetry {
+                    DispatchQueue.main.async {
+                        AppState.shared.spaceError = "Login failed — check Space email/password in Settings"
+                    }
+                    return
                 }
+                // JWT expired: log in again with the stored credentials, then retry once.
+                attemptLogin { _ in self.poll(isRetry: true) }
                 return
             }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -122,6 +137,67 @@ final class SpacePoller: @unchecked Sendable {
                 app.spaceError = nil
                 self.updateBadge(tasks: tasks, today: today)
             }
+        }.resume()
+    }
+
+    // MARK: - Login (auto JWT refresh)
+    // Verified against the live API: GET /auth/csrf → POST /auth/login with
+    // {email, password} + X-CSRF-Token → data.access_token.
+
+    private func attemptLogin(completion: @escaping (Bool) -> Void) {
+        guard let email = KeychainStore.shared.get("space-email"), !email.isEmpty,
+              let password = KeychainStore.shared.get("space-password"), !password.isEmpty else {
+            DispatchQueue.main.async {
+                AppState.shared.spaceError = "Token expired — add Space email/password in Settings"
+            }
+            completion(false)
+            return
+        }
+        login(email: email, password: password) { ok in
+            appendAppLog("space.log", ok ? "login OK, token refreshed" : "login FAILED")
+            if !ok {
+                DispatchQueue.main.async {
+                    AppState.shared.spaceError = "Space login failed — check email/password in Settings"
+                }
+            }
+            completion(ok)
+        }
+    }
+
+    private func login(email: String, password: String, completion: @escaping (Bool) -> Void) {
+        csrf { csrfToken in
+            guard let csrfToken else { completion(false); return }
+            var req = URLRequest(url: URL(string: "\(Self.baseURL)/auth/login")!, timeoutInterval: 15)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            req.setValue(csrfToken, forHTTPHeaderField: "X-CSRF-Token")
+            req.setValue("https://space.venturo.id", forHTTPHeaderField: "Origin")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email, "password": password])
+            URLSession.shared.dataTask(with: req) { data, response, _ in
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let payload = json["data"] as? [String: Any],
+                      let jwt = payload["access_token"] as? String else {
+                    completion(false)
+                    return
+                }
+                KeychainStore.shared.set("space-token", value: jwt)
+                completion(true)
+            }.resume()
+        }
+    }
+
+    private func csrf(_ completion: @escaping (String?) -> Void) {
+        var req = URLRequest(url: URL(string: "\(Self.baseURL)/auth/csrf")!, timeoutInterval: 15)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let csrfToken = json["data"] as? String else {
+                completion(nil)
+                return
+            }
+            completion(csrfToken)
         }.resume()
     }
 
