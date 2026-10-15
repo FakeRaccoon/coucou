@@ -120,6 +120,8 @@ enum PillCatalog {
               category: .service,   subtitle: "Integration",  source: .n8n),
         .init(id: "integration_discord", name: "Discord",     color: "#5865F2",
               category: .service,   subtitle: "Integration",  source: .n8n, githubOnly: true),
+        .init(id: "integration_space",   name: "Space",       color: "#239D9C",
+              category: .service,   subtitle: "Integration",  source: .n8n),
         .init(id: "integration_stripe",  name: "Stripe",      color: "#0570DE",
               category: .service,   subtitle: "Integration",  source: .n8n),
         .init(id: "integration_music",   name: "Apple Music", color: "#FA2D48",

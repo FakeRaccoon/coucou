@@ -109,6 +109,8 @@ struct SettingsView: View {
     @State private var discordClientId: String     = KeychainStore.shared.get("discord-client-id")     ?? ""
     @State private var discordClientSecret: String = KeychainStore.shared.get("discord-client-secret") ?? ""
     @State private var discordRedirect: String     = KeychainStore.shared.get("discord-redirect-uri")  ?? "http://localhost"
+    @State private var spaceToken: String     = KeychainStore.shared.get("space-token")     ?? ""
+    @State private var spaceProjectId: String = KeychainStore.shared.get("space-project-id") ?? "45"
     @AppStorage(CryptoSettings.exchangeKey)     private var cryptoExchange = CryptoExchange.coinbase.rawValue
     @AppStorage(CryptoSettings.currencyKey)     private var cryptoCurrency = "EUR"
     @AppStorage(CryptoSettings.coinsKey)        private var cryptoCoins = CryptoSettings.defaultCoins
@@ -1326,6 +1328,21 @@ struct SettingsView: View {
                         .foregroundColor(Color(hex: "#8E939C"))
                 }
 
+                // Space (space.venturo.id) — sprint tasks + team points
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Circle().fill(Color(hex: "#239D9C")).frame(width: 8, height: 8)
+                        Text("Space").font(.system(size: 12, weight: .semibold))
+                    }
+                    SecureField("Bearer token", text: $spaceToken)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Project ID", text: $spaceProjectId)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Open Space in the browser → DevTools → Network → any space-api request → copy the Authorization header value (without \"Bearer \"). Token is a session JWT: paste a fresh one when it expires. Project ID is the number in the sprint URL.")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color(hex: "#8E939C"))
+                }
+
                 // Notion
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
@@ -2103,6 +2120,9 @@ struct SettingsView: View {
         saveKey("discord-client-id",     value: discordClientId)
         saveKey("discord-client-secret", value: discordClientSecret)
         saveKey("discord-redirect-uri",  value: discordRedirect)
+        saveKey("space-token",       value: spaceToken)
+        saveKey("space-project-id",  value: spaceProjectId)
+        if !spaceToken.isEmpty { SpacePoller.shared.pollNow() }
         statusMessage = String(localized: "status.integrations-saved")
     }
 

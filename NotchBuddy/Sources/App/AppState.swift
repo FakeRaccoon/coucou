@@ -381,6 +381,10 @@ final class AppState: ObservableObject {
     @Published var discordSelfDeaf: Bool = false
     @Published var discordNotifications: [DiscordNotification] = []
 
+    // Space sprint (populated by SpacePoller)
+    @Published var spaceSprint: SpaceSprint? = nil
+    @Published var spaceError: String? = nil
+
     // GitHub stats + pulse + activity (populated by GithubPoller)
     @Published var githubStats: GitHubStats? = nil
     @Published var githubPulse: GitHubPulse? = nil

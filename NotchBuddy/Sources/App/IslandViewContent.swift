@@ -246,6 +246,8 @@ struct OverviewView: View {
             }
         case "integration_stripe":
             NSWorkspace.shared.open(URL(string: "https://dashboard.stripe.com/payments")!)
+        case "integration_space":
+            NSWorkspace.shared.open(URL(string: "https://space.venturo.id")!)
         case "integration_discord":
             DiscordController.shared.openDiscord()
         case "integration_notion":
@@ -1900,6 +1902,7 @@ struct IntegrationCardView: View {
         case "integration_notion":  return KeychainStore.shared.get("notion-api-key") != nil
         case "integration_calcom":  return KeychainStore.shared.get("calcom-api-key") != nil
         case "integration_discord": return KeychainStore.shared.get("discord-access-token") != nil
+        case "integration_space":   return KeychainStore.shared.get("space-token") != nil
         default: return false
         }
     }
@@ -1917,6 +1920,7 @@ struct IntegrationCardView: View {
         case "integration_notion":  return URL(string: "https://notion.so")
         case "integration_calcom":  return URL(string: "https://app.cal.com/bookings")
         case "integration_discord": return URL(string: "https://discord.com/channels/@me")
+        case "integration_space":   return URL(string: "https://space.venturo.id")
         default: return nil
         }
     }
@@ -1944,6 +1948,12 @@ struct IntegrationCardView: View {
         task.id == "integration_discord" &&
         (!appState.discordUsers.isEmpty || !appState.discordChannelName.isEmpty ||
          !appState.discordNotifications.isEmpty)
+    }
+
+    // Space with sprint data (or an auth error to show)
+    private var spaceHasData: Bool {
+        task.id == "integration_space" &&
+        (appState.spaceSprint != nil || appState.spaceError != nil)
     }
 
     // Resend with recent emails
@@ -2107,6 +2117,9 @@ struct IntegrationCardView: View {
                 .transition(.opacity)
         } else if discordHasVoice {
             DiscordVoiceCardView(state: appState)
+                .transition(.opacity)
+        } else if spaceHasData {
+            SpaceCardView(state: appState)
                 .transition(.opacity)
         } else if showingDetail && githubHasPulse {
             GitHubDetailView(
